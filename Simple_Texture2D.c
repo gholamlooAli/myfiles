@@ -18,9 +18,13 @@
 #include <stdio.h>
 #include "esUtil.h"
 //#include <GL/glut.h>
-GLint im_width,im_height;
-GLfloat image_width,image_height;
-GLfloat	image[2];//={640.0f,480.0f};
+GLint im_width;
+GLint im_height;
+char *im_name;//="/home/linaro/frame6.raw";
+
+GLint imwLoc;
+//GLint imhLoc;
+
 typedef struct
 {
    // Handle to a program object
@@ -43,7 +47,10 @@ void check_error(char *label)
 	GLenum error;
 	while ((error= glGetError()) != GL_NO_ERROR)
 	{
-		fprintf(stderr, "%s error detected: \n",label);  
+		if(error == GL_INVALID_VALUE)
+			fprintf(stderr, "%s INVALIDerror detected:%d \n",label,error);  
+		if(error == GL_INVALID_OPERATION)
+			fprintf(stderr, "%s INVALI OP Derror detected:%d \n",label,error);  
 	}
 }
 
@@ -145,14 +152,18 @@ int Init ( ESContext *esContext )
 {
    esContext->userData = malloc(sizeof(UserData));	
    UserData *userData = esContext->userData;
-   GLint imwLoc;
-   GLint imhLoc;	
+   	
    
-   GLbyte vShaderStr[] =  
+   GLbyte vShaderStr[] = 
+/*	"#version 300 es \n"	 
+	"layout (location=0) in vec4 a_position;   \n"
+	"layout (location=1) in vec2 a_texCoord;   \n"      
+	"out  vec2 v_texCoord;     \n"
+/*/	//version 2.0
       "attribute vec4 a_position;   \n"
       "attribute vec2 a_texCoord;   \n"
-//"uniform float image_width;			\n"
       "varying vec2 v_texCoord;     \n"
+
       "void main()                  \n"
       "{                            \n"
       "   gl_Position = a_position; \n"
@@ -160,16 +171,23 @@ int Init ( ESContext *esContext )
       "}                            \n";
    
    GLbyte fShaderStr[] =  
+     // "#version 300 es 			\n"
+      
+	
       "precision mediump float;                            \n"
-      "varying vec2 v_texCoord;                            \n"
-      "uniform sampler2D s_texture;                        \n"
-	"uniform vec2 uimage_width;			\n"
-//	"uniform vec1 image_height;			\n"
+	//"in vec2 v_texCoord;                            \n"
+      	"varying vec2 v_texCoord;                            \n"
+	
+	"uniform mediump int im_h;			\n"      	
+	"uniform mediump int uimage_width;			\n"	
+	"uniform sampler2D s_texture;                        \n"
+	//"layout (location=0) out vec4 outColor;   \n"
+	//"layout (location=1) int uimage_width;			\n"
       "void main()                                         \n"
 	
 
       "{                                                   \n"
-      //"  gl_FragColor = texture2D( s_texture, v_texCoord );\n"
+      
 	  "float red, green, blue;       \n"
 	  "vec4 luma_chroma;	       \n"
 	  "float luma, chroma_u,  chroma_v;       \n"
@@ -186,8 +204,8 @@ int Init ( ESContext *esContext )
 
 	  "pixelx = v_texCoord.x;	\n"
 	  "pixely = v_texCoord.y;	\n"
-	  "texture_width=uimage_width.x;	\n"
-	  "texture_height=uimage_width.y;	\n"
+	  "texture_width=float(uimage_width);	\n"
+	  "texture_height=float(im_h);	\n"
 	  "texel_width=1.0/texture_width; \n"
 	  "texel_height=1.0/texture_height; \n"	
 	  //"x = pixelx - (IMAGE_WIDTH * 0.5) / texture_width;	\n"
@@ -242,7 +260,9 @@ int Init ( ESContext *esContext )
 //	  "red = luma ;	\n"
 //	  "green = luma;	\n"
 //	  "blue = luma ;	\n"
+
 	  "gl_FragColor = clamp(res, vec4(0), vec4(1));	\n"
+	 //"outColor = clamp(res, vec4(0), vec4(1));	\n"
       "}                                                   \n";
 
 
@@ -261,35 +281,11 @@ int Init ( ESContext *esContext )
    // Get the sampler location
    userData->samplerLoc = glGetUniformLocation ( userData->programObject, "s_texture" );
 
-   // Get the image_width location
-   imwLoc = glGetUniformLocation ( userData->programObject, "uimage_width" );
-   if(-1== imwLoc)
-   {
-	fprintf(stderr, "warning imwLoc error\n");
-	check_error("war imwLoc");
-   }
-   else
-   {
-	glUniform2fv(imwLoc,1,image);
-	check_error("war after imwLoc");	
-   }   
-			
-   // Get the image_height location
- /*  imhLoc = glGetUniformLocation ( userData->programObject, "image_height" );
-   if(-1== imhLoc)
-   {
-	fprintf(stderr, "warning imhLoc error\n");
-		check_error("war imhLoc");
-   }
-   else
-   {
-	glUniform1fv(imhLoc, im_height);
-		check_error("war after imhLoc");
-   }  
- */
+   
+ 
    // Load the texture
    //userData->textureId = CreateSimpleTexture2D ();
-   userData->textureId=LoadTexture ("/home/linaro/frame6.raw",im_width,im_height);
+   userData->textureId=LoadTexture (im_name,im_width,im_height);
    glClearColor ( 0.0f, 0.0f, 0.0f, 0.0f );
    return GL_TRUE;
 }
@@ -336,7 +332,37 @@ void Draw ( ESContext *esContext )
 
    // Set the sampler texture unit to 0
    glUniform1i ( userData->samplerLoc, 0 );
-
+   
+	
+			
+	/* 
+	// Get the image_height location
+	imhLoc = glGetUniformLocation ( userData->programObject, "im_h" );
+	
+	if(-1== imhLoc)
+	   {
+		fprintf(stderr, "warning imhLoc error\n");
+		check_error("war imhLoc");
+	   }
+	   else
+	   {
+		glUniform1i(imhLoc, im_height);
+		check_error("war after imhLoc");
+	   }  
+*/
+	// Get the image_width location
+   	imwLoc = glGetUniformLocation ( userData->programObject, "uimage_width" );
+     	
+	if(-1== imwLoc)
+	   {
+		fprintf(stderr, "warning imwLoc error\n");
+		check_error("war imwLoc");
+	   }
+	else
+	   {
+		glUniform1i(imwLoc,im_width);
+		check_error("war after imwLoc");	
+	   }   
    glDrawElements ( GL_TRIANGLES, 6, GL_UNSIGNED_SHORT, indices );
 
 }
@@ -359,20 +385,26 @@ void ShutDown ( ESContext *esContext )
 
 int main ( int argc, char *argv[] )
 {
+	int inWidth,inHeight,outWidth,outHeight,offsetWidth,offsetHeight;
+	if(argc != 4) {
+		printf ("usage=	imageFileName ,  im_width, im_height \n");
+		return 1;
+	}
+	printf( "Hi\n" );
+	im_name  = argv[1];
+	im_width= atoi (argv[2]);
+	im_height= atoi (argv[3]);    
+	
+
    ESContext esContext;
    UserData  userData;
 
    esInitContext ( &esContext );
    esContext.userData = &userData;
-	im_width=640;
-	im_height=480;
-	image[0]=(GLfloat)im_width;
-	image[1]=(GLfloat)im_height;
-	//image_width=640.0;//(float)im_width;
-
-	//image_height=480.0;//(float)im_height;
-
-   esCreateWindow ( &esContext, "Simple Texture 2D",im_width,im_height/*640, 480*/, ES_WINDOW_RGB );
+	//im_width=640;
+	//im_height=480;
+	
+   esCreateWindow ( &esContext, "Simple Texture 2D",im_width,im_height, ES_WINDOW_RGB );
 
    if ( !Init ( &esContext ) )
       return 0;

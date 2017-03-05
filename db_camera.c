@@ -175,145 +175,7 @@ void capture_and_display(Sourceparams_t * sourceparams)
     }
 }
 
-/* *************************************************************************
-   NAME:  setup_capture_source
-   USAGE:
-   int status;
-   Cmdargs_t argstruct;
-   Sourceparams_t  sourceparams;
 
-   argstat =  parse_command_line(argc, argv, &argstruct);
-
-   status =  setup_capture_source(argstruct, &sourceparams);
-   returns: int
-   DESCRIPTION:
-                 given the data from the command line, set up the source for
-		 the video. if a device file was given, we can  set up
-		 that device. if none was given we can set up a test pattern.
-		 return 0 if all's well
-		        -1 and complain if it's not
-   REFERENCES:
-   LIMITATIONS:
-   GLOBAL VARIABLES:
-      accessed:
-      modified:
-   FUNCTIONS CALLED:
-   REVISION HISTORY:
-        STR                  Description of Revision                 Author
-      1-Jan-07               initial coding                           gpk
- ************************************************************************* */
-
-int setup_capture_source(Cmdargs_t argstruct, Sourceparams_t * sourceparams)
-{
-    int sourcestatus, capturestatus, retval;
-    Videocapabilities_t capabilities;
-
-    retval = -1;
-
-    sourcestatus = init_source_device (argstruct, sourceparams, &capabilities);
-
-    if (0 == sourcestatus)
-    {
-        capturestatus = set_device_capture_parms(sourceparams, &capabilities);
-
-        if (0 == capturestatus)
-        {
-          retval = connect_source_buffers(sourceparams);
-        }
-    }
-
-  return(retval);
-
-}
-
-
-/* *************************************************************************
-   NAME:  init_source_device
-   USAGE:
-   int some_int;
-   Cmdargs_t argstruct;
-   Sourceparams_t sourceparams;
-   Videocapabilities_t  capabilities;
-   some_int =  init_source_device(argstruct, &sourceparams, &capabilities);
-   if (0 == some_int)
-   -- continue
-   else
-   -- handle an error
-   returns: int
-   DESCRIPTION:
-                 open the video device given in argstruct.devicename;
-		 store its capabilities in capabilities
-		 return 0 if all's well
-		       -1 if malloc fails or we can't read the device's
-		             capture capabilities
-   REFERENCES:
-   LIMITATIONS:
-   GLOBAL VARIABLES:
-      accessed: none
-      modified: none
-   FUNCTIONS CALLED:
-   REVISION HISTORY:
-        STR                  Description of Revision                 Author
-      4-Jan-07               initial coding                           gpk
-      5-Jan-08  iomethod now set in separate function instead of      gpk
-                being hardcoded.
-     20-Jan-08	removed captured.start buffer after profiling showed  gpk
-                copying data into it to be a hot spot. now just
-		point captured.start to the data buffers from the
-		device or test pattern.
- ************************************************************************* */
-
-int init_source_device(Cmdargs_t argstruct, Sourceparams_t * sourceparams,
-		       Videocapabilities_t * capabilities)
-{
-  int fd, retval, buffersize;
-
-  /* open it and make sure it's a character device  */
-
-  fd = verify_and_open_device(argstruct.devicename);
-
-  if (0 > fd)
-    {
-      retval = -1; /* error  */
-    }
-  else
-    {
-      /* fill in sourceparams with the image size and encoding  */
-      /* from the command line.  */
-      sourceparams->source = LIVESOURCE;
-      sourceparams->fd = fd;
-      sourceparams->encoding = argstruct.encoding;
-      sourceparams->image_width = argstruct.image_width;
-      sourceparams->image_height = argstruct.image_height;
-
-      /* start here  */
-      /* now allocate a buffer to hold the data we read from  */
-      /* this device.   */
-         /* ali
-          buffersize = compute_bytes_per_frame(argstruct.image_width,
-                           argstruct.image_height,
-                           argstruct.encoding);
-
-          sourceparams->captured.start = NULL;
-          sourceparams->captured.length = buffersize;
-        */
-        /* 4 bytes represents 2 pixels: UYVY  */
-      buffersize = argstruct.image_width * argstruct.image_height * 2;
-
-      /* now get the device capabilities and select the io method  */
-      /* based on them.   */
-
-      retval = get_device_capabilities(argstruct.devicename, fd, capabilities);
-/*
-      if (0 == retval)
-        {
-          select_io_method(sourceparams, capabilities);
-        }
-    }
-*/
-  //retval=0;
-  return(retval);
-}
 
 
 
@@ -1054,14 +916,14 @@ char * get_encoding_string(Encodingmethod_t encoding)
  ************************************************************************* */
 
 int get_device_capabilities(char * devicename, int device_fd,
-			    Videocapabilities_t * capabilities)
+			    Videocapabilities_t * p_capabilities)
 {
   int retval, querystatus, common_found;
   char errstring[ERRSTRINGLEN];
 
-  memset(capabilities, 0, sizeof(*capabilities));
+  memset(p_capabilities, 0, sizeof(*p_capabilities));
 
-  querystatus = xioctl (device_fd, VIDIOC_QUERYCAP, &(capabilities->capture));
+  querystatus = xioctl (device_fd, VIDIOC_QUERYCAP, &(p_capabilities->capture));
 
 
   if (-1 == querystatus)
@@ -1084,39 +946,39 @@ int get_device_capabilities(char * devicename, int device_fd,
   else
     {
       fprintf(stderr, "\nInfo: '%s' connects to %s using the %s driver\n\n",
-	      devicename, capabilities->capture.card,
-	      capabilities->capture.driver);
+	      devicename, p_capabilities->capture.card,
+	      p_capabilities->capture.driver);
       describe_capture_capabilities("Device has the following capabilities",
-				    &capabilities->capture);
+				    &p_capabilities->capture);
       //describe_device_controls("Device has the following controls available",
 	//		       devicename, device_fd);
 
       common_found = 0;
-      collect_supported_image_formats(device_fd, capabilities);
-      if (1 == capabilities->supports_yuv420)
+      collect_supported_image_formats(device_fd, p_capabilities);
+      if (1 == p_capabilities->supports_yuv420)
 	{
 	  fprintf(stderr, "device supports -e YUV420\n");
 	  common_found = 1;
 	}
 
-      if (1 == capabilities->supports_yuv422)
+      if (1 == p_capabilities->supports_yuv422)
 	{
 	  fprintf(stderr, "device supports -e YUV422\n");
 	  common_found = 1;
 	}
 
-	if (1 == capabilities->supports_uyvy)
+	if (1 == p_capabilities->supports_uyvy)
 	{
 	  fprintf(stderr, "device supports -e UYVY\n");
 	  common_found = 1;
 	}
 
-      if (1 == capabilities->supports_greyscale)
+      if (1 == p_capabilities->supports_greyscale)
 	{
 	  fprintf(stderr, "device supports -e LUMA\n");
 	  common_found = 1;
 	}
-      if (1 == capabilities->supports_rgb)
+      if (1 == p_capabilities->supports_rgb)
 	{
 	  fprintf(stderr, "device supports -e RGB\n");
 	   common_found = 1;
@@ -1192,20 +1054,20 @@ int get_device_capabilities(char * devicename, int device_fd,
       7-Jan-07               initial coding                           gpk
  ************************************************************************* */
 
-int set_io_method(Sourceparams_t * sourceparams,
-		  Videocapabilities_t * capabilities)
+int set_io_method(Sourceparams_t * p_sourceparams,
+		  Videocapabilities_t * p_capabilities)
 {
   int retval;
 
-  switch (sourceparams->iomethod)
+  switch (p_sourceparams->iomethod)
     {
     case IO_METHOD_MMAP:
-      retval = init_mmap_io(sourceparams, capabilities);
+      retval = init_mmap_io(p_sourceparams, p_capabilities);
       break;
 
     default:
       fprintf(stderr, "Error: %s doesn't have a case for %d\n",
-	      __FUNCTION__, sourceparams->iomethod);
+	      __FUNCTION__, p_sourceparams->iomethod);
       fprintf(stderr, "  add one and recompile\n");
       abort();
       break;

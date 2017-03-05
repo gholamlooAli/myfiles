@@ -404,29 +404,27 @@ void ShutDown ( ESContext *esContext )
 }
 
 void init_params(void);
-void init_params()
+void init_params(Cmdargs_t *args);
+void init_params(Cmdargs_t *args)
 {
    Videocapabilities_t capabilities;
 
-   argstrut->devicename="/dev/video0");
-   argstruct->encoding=UYVY;
-   argstruct->image_width=1920;
-   argstruct->image_height=1080;
+   args->devicename="/dev/video0");
+   args->encoding=UYVY;
+   args->image_width=1920;
+   args->image_height=1080;
 
-   sourceparams->iomethod = IO_METHOD_MMAP;
+
 }
 
 int main ( int argc, char *argv[] )
 {
-    int argstat, displaystat, retval;
-    Cmdargs_t argstruct; /* command line parms  */
-    Sourceparams_t sourceparams; /* info about video source  */
-    Displaydata_t displaydata; /* info about dest display  */
     int inWidth,inHeight,outWidth,outHeight,offsetWidth,offsetHeight;
 
     /* end local prototypes  */
 
-    if(argc != 4) {
+    if(argc != 4)
+    {
 
 		printf ("usage=	imageFileName ,  im_width, im_height \n");
 		return 1;
@@ -453,49 +451,40 @@ int main ( int argc, char *argv[] )
    esRegisterDrawFunc ( &esContext, Draw );
    esRegisterUpdateFunc ( &esContext, Update );
 ////////////////////////////////////////////////
-    memset(&sourceparams, 0, sizeof(sourceparams));
+    int argstat, displaystat, retval;
+    Cmdargs_t argstruct; /* command line parms  */
+    Sourceparams_t sourceparams; /* info about video source  */
+    Displaydata_t displaydata; /* info about dest display  */
 
+    memset(&sourceparams, 0, sizeof(sourceparams));
+    init_params(&argstruct);
+    sourceparams.iomethod = IO_METHOD_MMAP;
     int sourcestatus;
     Videocapabilities_t capabilities;
     int status;
     retval = -1;
 
-    sourcestatus = init_source_device(argstruct, sourceparams, &capabilities);
+	capturestat = setup_capture_source(argstruct, &sourceparams);
 
-    if (0 == sourcestatus)
-    {
-        capturestatus = set_device_capture_parms(sourceparams, &capabilities);
+	if (0 == capturestat)
+	{
 
-        if (0 == capturestatus)
-        {
-              retval = connect_source_buffers(sourceparams);
-              if(0 == retval )
-              {
-                  status = start_capture_device(sourceparams);
+	  status = start_capture_device(&sourceparams);
 
-                  if (-1 == status)
-                    {
-                      fprintf(stderr, "Error: unable to start capture device\n");
-                    }
-                  else
-                    {
-                      fprintf(stderr, "\nPress a key in the display window\n");
-                      //glutMainLoop();
-                      esMainLoop ( &esContext );
+	  if (-1 == status)
+		{
+		  fprintf(stderr, "Error: unable to start capture device\n");
+		}
+	  else
+		{
+		  fprintf(stderr, "\nPress a key in the display window\n");
+		  //glutMainLoop();
+		  esMainLoop ( &esContext );
 
-                      status = stop_capture_device(sourceparams);
-                    }
+		  status = stop_capture_device(&sourceparams);
+		}
 
-              }
-              else
-              {
-                retval=-1;
-              }
-        }
-        else
-        {
-          retval=-1;
-        }
+
     }
     else
     {
@@ -507,3 +496,145 @@ int main ( int argc, char *argv[] )
 
    ShutDown ( &esContext );
 }
+
+/* *************************************************************************
+   NAME:  setup_capture_source
+   USAGE:
+   int status;
+   Cmdargs_t argstruct;
+   Sourceparams_t  sourceparams;
+
+   argstat =  parse_command_line(argc, argv, &argstruct);
+
+   status =  setup_capture_source(argstruct, &sourceparams);
+   returns: int
+   DESCRIPTION:
+                 given the data from the command line, set up the source for
+		 the video. if a device file was given, we can  set up
+		 that device. if none was given we can set up a test pattern.
+		 return 0 if all's well
+		        -1 and complain if it's not
+   REFERENCES:
+   LIMITATIONS:
+   GLOBAL VARIABLES:
+      accessed:
+      modified:
+   FUNCTIONS CALLED:
+   REVISION HISTORY:
+        STR                  Description of Revision                 Author
+      1-Jan-07               initial coding                           gpk
+ ************************************************************************* */
+
+int setup_capture_source(Cmdargs_t argstruct, Sourceparams_t * p_sourceparams)
+{
+    int sourcestatus, capturestatus, retval;
+    Videocapabilities_t capabilities;
+
+    retval = -1;
+
+    sourcestatus = init_source_device (argstruct, p_sourceparams, &capabilities);
+
+    if (0 == sourcestatus)
+    {
+        capturestatus = set_device_capture_parms(p_sourceparams, &capabilities);
+
+        if (0 == capturestatus)
+        {
+          retval = connect_source_buffers(p_sourceparams);
+        }
+    }
+
+  return(retval);
+
+}
+
+
+
+/* *************************************************************************
+   NAME:  init_source_device
+   USAGE:
+   int some_int;
+   Cmdargs_t argstruct;
+   Sourceparams_t sourceparams;
+   Videocapabilities_t  capabilities;
+   some_int =  init_source_device(argstruct, &sourceparams, &capabilities);
+   if (0 == some_int)
+   -- continue
+   else
+   -- handle an error
+   returns: int
+   DESCRIPTION:
+                 open the video device given in argstruct.devicename;
+		 store its capabilities in capabilities
+		 return 0 if all's well
+		       -1 if malloc fails or we can't read the device's
+		             capture capabilities
+   REFERENCES:
+   LIMITATIONS:
+   GLOBAL VARIABLES:
+      accessed: none
+      modified: none
+   FUNCTIONS CALLED:
+   REVISION HISTORY:
+        STR                  Description of Revision                 Author
+      4-Jan-07               initial coding                           gpk
+      5-Jan-08  iomethod now set in separate function instead of      gpk
+                being hardcoded.
+     20-Jan-08	removed captured.start buffer after profiling showed  gpk
+                copying data into it to be a hot spot. now just
+		point captured.start to the data buffers from the
+		device or test pattern.
+ ************************************************************************* */
+
+int init_source_device(Cmdargs_t argstruct, Sourceparams_t * p_sourceparams,
+		       Videocapabilities_t * p_capabilities)
+{
+  int fd, retval, buffersize;
+
+  /* open it and make sure it's a character device  */
+
+  fd = verify_and_open_device(argstruct.devicename);
+
+  if (0 > fd)
+    {
+      retval = -1; /* error  */
+    }
+  else
+    {
+      /* fill in sourceparams with the image size and encoding  */
+      /* from the command line.  */
+      p_sourceparams->source = LIVESOURCE;
+      p_sourceparams->fd = fd;
+      p_sourceparams->encoding = argstruct.encoding;
+      p_sourceparams->image_width = argstruct.image_width;
+      p_sourceparams->image_height = argstruct.image_height;
+
+      /* start here  */
+      /* now allocate a buffer to hold the data we read from  */
+      /* this device.   */
+         /* ali
+          buffersize = compute_bytes_per_frame(argstruct.image_width,
+                           argstruct.image_height,
+                           argstruct.encoding);
+
+          sourceparams->captured.start = NULL;
+          sourceparams->captured.length = buffersize;
+        */
+        /* 4 bytes represents 2 pixels: UYVY  */
+      buffersize = argstruct.image_width * argstruct.image_height * 2;
+
+      /* now get the device capabilities and select the io method  */
+      /* based on them.   */
+
+      retval = get_device_capabilities(argstruct.devicename, fd, p_capabilities);
+/*
+      if (0 == retval)
+        {
+          select_io_method(sourceparams, capabilities);
+        }
+    }
+*/
+  //retval=0;
+  return(retval);
+}
+
